@@ -14,17 +14,12 @@ namespace Jpg
     /// <summary>
     /// Interaktionslogik für MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window, IDisposable
+    public partial class MainWindow : Window
     {
-        public delegate int Algorithm(int r, int g, int b);
-
-        private Bitmap image;
-        private Bitmap imageCopy;
-        private Algorithm[] algorithms = { (r, g, b) => (r + g + b) / 3,
-                                        (r, g, b) => (int)(0.21 * r + 0.72 * g + 0.07 * b),
-                                        Bw_Lightness };
+        private BW_Handler bwHandler;
         private string filePath;
         private const string FILTER_STRING = "JPG-Bilder(*.JPG; *.JPEG)| *.JPG; *.JPEG|PNG-Bilder(*.PNG)| *.PNG";
+
 
         public MainWindow()
         {
@@ -41,84 +36,40 @@ namespace Jpg
             {
                 filePath = fileDialog.FileName;
                 Title = fileDialog.SafeFileName;
-                image = new Bitmap(filePath);
-                imageCopy = image.Clone(new System.Drawing.Rectangle(0, 0, image.Width, image.Height), image.PixelFormat);
-                img.Source = Convert(image);
+                bwHandler = new BW_Handler(filePath);
+                img.Source = bwHandler.GetBitmapSource();
             }
         }
 
         private async void EditBtn_Click(object sender, RoutedEventArgs e)
         {
-            if (image == null)
-            {
-                return;
-            }
-
-            Reset();
-            Task<Bitmap> t = BW(image, algorithms[cBx.SelectedIndex]);
+            Task t = bwHandler.ConvertToBW(cBx.SelectedIndex);
             await t;
-            img.Source = Convert(t.Result);
+            img.Source = bwHandler.GetBitmapSource();
         }
 
         private void Re_Click(object sender, RoutedEventArgs e)
         {
-            Reset();
-            img.Source = Convert(image);
+            bwHandler.ResetImage();
+            img.Source = bwHandler.GetBitmapSource();
         }
-
 
         private void Save_Click(object sender, RoutedEventArgs e)
         {
-            SaveImage(image, filePath.Insert(filePath.LastIndexOf('.'), "_bw"));
+            SaveImage(bwHandler.Image, filePath.Insert(filePath.LastIndexOf('.'), "_bw"));
         }
 
         private async void SaveAll_Click(object sender, RoutedEventArgs e)
         {
             //save all BWs in one Folder
             DirectoryInfo dir = Directory.CreateDirectory(filePath.Remove(filePath.LastIndexOf('.')));
-            string path = System.IO.Path.Combine(dir.FullName, System.IO.Path.GetFileName(filePath));
-            Rectangle copyRect = new Rectangle(0, 0, image.Width, image.Height);
-            //Do Work parallel
-            Task<Bitmap> t1 = BW(image.Clone(copyRect, image.PixelFormat), algorithms[0]);
-            Task<Bitmap> t2 = BW(image.Clone(copyRect, image.PixelFormat), algorithms[1]);
-            Task<Bitmap> t3 = BW(image.Clone(copyRect, image.PixelFormat), algorithms[2]);
-
-            SaveImage(await t1, path.Insert(path.LastIndexOf('.'), "_average"));
-            SaveImage(await t2, path.Insert(path.LastIndexOf('.'), "_luminosity"));
-            SaveImage(await t3, path.Insert(path.LastIndexOf('.'), "_lightness"));
-
+            string path = Path.Combine(dir.FullName, Path.GetFileName(filePath));
+            Task<Bitmap>[] tasks = BW_Handler.ConvertWithAllAlgorithms(bwHandler.Image);
+            SaveImage(await tasks[0], path.Insert(path.LastIndexOf('.'), "_average"));
+            SaveImage(await tasks[1], path.Insert(path.LastIndexOf('.'), "_luminosity"));
+            SaveImage(await tasks[2], path.Insert(path.LastIndexOf('.'), "_lightness"));
+            
         }
-
-        private static int Bw_Lightness(int r, int g, int b)
-        {
-            return (int)(0.5 * (Max(r, g, b) + Min(r, g, b)));
-        }
-
-        private static int Max(int r, int g, int b)
-        {
-            return Max(r, Max(g, b));
-        }
-
-        private static int Max(int a, int b)
-        {
-            return a > b ? a : b;
-        }
-
-        private static int Min(int r, int g, int b)
-        {
-            return Min(r, Min(g, b));
-        }
-
-        private static int Min(int a, int b)
-        {
-            return a < b ? a : b;
-        }
-
-        private void Reset()
-        {
-            image = imageCopy.Clone(new System.Drawing.Rectangle(0, 0, imageCopy.Width, imageCopy.Height), imageCopy.PixelFormat);
-        }
-
 
         private void SaveImage(Bitmap bitmap, string saveFilePath)
         {
@@ -151,69 +102,8 @@ namespace Jpg
             MessageBox.Show("Datei gespeichert unter " + saveFilePath, "Datei gespeichert");
         }
 
-        public BitmapSource Convert(Bitmap bitmap)
-        {
-            using (MemoryStream memory = new MemoryStream())
-            {
-                bitmap.Save(memory, System.Drawing.Imaging.ImageFormat.Bmp);
-                memory.Position = 0;
-                BitmapImage bitmapimage = new BitmapImage();
-                bitmapimage.BeginInit();
-                bitmapimage.StreamSource = memory;
-                bitmapimage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapimage.EndInit();
 
-                return bitmapimage;
-            }
-        }
 
-        private Task<Bitmap> BW(Bitmap image, Algorithm alg)
-        {
-            return Task.Run(() =>
-            {
-                if (image == null)
-                {
-                    return null;
-                }
-                BitmapData data = image.LockBits(new System.Drawing.Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadWrite, image.PixelFormat);
-
-                int bytesPerPixel = Bitmap.GetPixelFormatSize(image.PixelFormat) / 8;
-                int byteCount = data.Stride * image.Height;
-                byte[] pixels = new byte[byteCount];
-                IntPtr ptrFirstPixel = data.Scan0;
-                Marshal.Copy(ptrFirstPixel, pixels, 0, pixels.Length);
-                int heightInPixels = data.Height;
-                int widthInBytes = data.Width * bytesPerPixel;
-
-                Parallel.For(0, heightInPixels, y =>
-                {
-                    int currentLine = y * data.Stride;
-                    for (int x = 0; x < widthInBytes; x = x + bytesPerPixel)
-                    {
-                        int r = pixels[currentLine + x + 2];
-                        int g = pixels[currentLine + x + 1];
-                        int b = pixels[currentLine + x];
-
-                        // calculate new pixel value
-                        int gray = alg(r, g, b);
-
-                        pixels[currentLine + x] = (byte)gray;
-                        pixels[currentLine + x + 1] = (byte)gray;
-                        pixels[currentLine + x + 2] = (byte)gray;
-                    }
-                });
-
-                // copy modified bytes back
-                Marshal.Copy(pixels, 0, ptrFirstPixel, pixels.Length);
-                image.UnlockBits(data);
-                return image;
-            });
-        }
-
-        public void Dispose()
-        {
-            image.Dispose();
-            imageCopy.Dispose();
-        }
+    
     }
 }
