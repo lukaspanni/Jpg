@@ -1,22 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Microsoft.Win32;
+using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using Microsoft.Win32;
 
 
 namespace Jpg
@@ -24,13 +14,13 @@ namespace Jpg
     /// <summary>
     /// Interaktionslogik für MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, IDisposable
     {
-        public delegate int algorithm(int r, int g, int b);
+        public delegate int Algorithm(int r, int g, int b);
 
         private Bitmap image;
         private Bitmap imageCopy;
-        private algorithm[] algorithms = { (r, g, b) => (r + g + b) / 3,
+        private Algorithm[] algorithms = { (r, g, b) => (r + g + b) / 3,
                                         (r, g, b) => (int)(0.21 * r + 0.72 * g + 0.07 * b),
                                         Bw_Lightness };
         private string filePath;
@@ -59,7 +49,11 @@ namespace Jpg
 
         private async void EditBtn_Click(object sender, RoutedEventArgs e)
         {
-            if (image == null) return;
+            if (image == null)
+            {
+                return;
+            }
+
             Reset();
             Task<Bitmap> t = BW(image, algorithms[cBx.SelectedIndex]);
             await t;
@@ -83,7 +77,7 @@ namespace Jpg
             //save all BWs in one Folder
             DirectoryInfo dir = Directory.CreateDirectory(filePath.Remove(filePath.LastIndexOf('.')));
             string path = System.IO.Path.Combine(dir.FullName, System.IO.Path.GetFileName(filePath));
-            System.Drawing.Rectangle copyRect = new System.Drawing.Rectangle(0, 0, image.Width, image.Height);
+            Rectangle copyRect = new Rectangle(0, 0, image.Width, image.Height);
             //Do Work parallel
             Task<Bitmap> t1 = BW(image.Clone(copyRect, image.PixelFormat), algorithms[0]);
             Task<Bitmap> t2 = BW(image.Clone(copyRect, image.PixelFormat), algorithms[1]);
@@ -102,20 +96,23 @@ namespace Jpg
 
         private static int Max(int r, int g, int b)
         {
-            if (r >= g && r >= b) return r;
-            if (g >= b && g >= r) return g;
-            if (b >= r && b >= g) return b;
-            return 0;
+            return Max(r, Max(g, b));
+        }
+
+        private static int Max(int a, int b)
+        {
+            return a > b ? a : b;
         }
 
         private static int Min(int r, int g, int b)
         {
-            if (r <= g && r <= b) return r;
-            if (g <= b && g <= r) return g;
-            if (b <= r && b <= g) return b;
-            return 0;
+            return Min(r, Min(g, b));
         }
 
+        private static int Min(int a, int b)
+        {
+            return a < b ? a : b;
+        }
 
         private void Reset()
         {
@@ -128,7 +125,11 @@ namespace Jpg
             if (File.Exists(saveFilePath))
             {
                 MessageBoxResult result = MessageBox.Show("Datei existiert bereits, anderen Pfad / Dateinamen auswählen", "Fehler", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (result == MessageBoxResult.Cancel) return;
+                if (result == MessageBoxResult.Cancel)
+                {
+                    return;
+                }
+
                 SaveFileDialog sfd = new SaveFileDialog
                 {
                     InitialDirectory = System.IO.Path.GetDirectoryName(saveFilePath),
@@ -166,7 +167,7 @@ namespace Jpg
             }
         }
 
-        private Task<Bitmap> BW(Bitmap image, algorithm alg)
+        private Task<Bitmap> BW(Bitmap image, Algorithm alg)
         {
             return Task.Run(() =>
             {
@@ -209,6 +210,10 @@ namespace Jpg
             });
         }
 
-
+        public void Dispose()
+        {
+            image.Dispose();
+            imageCopy.Dispose();
+        }
     }
 }
