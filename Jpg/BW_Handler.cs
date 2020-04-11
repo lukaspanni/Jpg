@@ -59,9 +59,9 @@ namespace Jpg
         public Task ConvertToBW(int algIndex)
         {
             ResetImage();
-            return Task.Run(() =>
+            return Task.Run(async () =>
             {
-                ConvertToBW(Image, algorithms[algIndex]);   
+                Image = await ConvertToBW(Image.Clone(new Rectangle(0, 0, Image.Width, Image.Height), Image.PixelFormat), algorithms[algIndex]);   
             });
         }
 
@@ -84,7 +84,7 @@ namespace Jpg
                 {
                     return null;
                 }
-                BitmapData data = image.LockBits(new System.Drawing.Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadWrite, image.PixelFormat);
+                BitmapData data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadWrite, image.PixelFormat);
 
                 int bytesPerPixel = Bitmap.GetPixelFormatSize(image.PixelFormat) / 8;
                 int byteCount = data.Stride * image.Height;
