@@ -16,8 +16,8 @@ namespace Jpg
     /// </summary>
     public partial class MainWindow : Window
     {
-        private BW_Handler bwHandler;
-        private string filePath;
+        private BW_Handler[] bwHandlers;
+        private string[] filePaths;
         private const string FILTER_STRING = "JPG-Bilder(*.JPG; *.JPEG)| *.JPG; *.JPEG|PNG-Bilder(*.PNG)| *.PNG";
 
 
@@ -30,45 +30,69 @@ namespace Jpg
         {
             OpenFileDialog fileDialog = new OpenFileDialog
             {
-                Filter = FILTER_STRING
+                Filter = FILTER_STRING,
+                Multiselect = true
             };
             if (fileDialog.ShowDialog(this) == true)
             {
-                filePath = fileDialog.FileName;
+                filePaths = fileDialog.FileNames;
                 Title = fileDialog.SafeFileName;
-                bwHandler = new BW_Handler(filePath);
-                img.Source = bwHandler.GetBitmapSource();
+                bwHandlers = new BW_Handler[filePaths.Length];
+                for (var i = 0; i < filePaths.Length; i++)
+                {
+                    bwHandlers[i] = new BW_Handler(filePaths[i]);
+                }
+                img.Source = bwHandlers[0].GetBitmapSource();
             }
         }
 
         private async void EditBtn_Click(object sender, RoutedEventArgs e)
         {
-            Task t = bwHandler.ConvertToBW(cBx.SelectedIndex);
-            await t;
-            img.Source = bwHandler.GetBitmapSource();
+            Task[] tasks = new Task[bwHandlers.Length];
+            for (int i = 0; i < bwHandlers.Length; i++)
+            {
+                tasks[i] = bwHandlers[i].ConvertToBW(cBx.SelectedIndex);
+            }
+
+            foreach (Task task in tasks)
+            {
+                await task;
+            }
+            img.Source = bwHandlers[0].GetBitmapSource();
         }
 
         private void Re_Click(object sender, RoutedEventArgs e)
         {
-            bwHandler.ResetImage();
-            img.Source = bwHandler.GetBitmapSource();
+            for (int i = 0; i < bwHandlers.Length; i++)
+            {
+                bwHandlers[i].ResetImage();
+            }
+            img.Source = bwHandlers[0].GetBitmapSource();
         }
 
         private void Save_Click(object sender, RoutedEventArgs e)
         {
-            SaveImage(bwHandler.Image, filePath.Insert(filePath.LastIndexOf('.'), "_bw"));
-        }
+            for (int i = 0; i < bwHandlers.Length; i++)
+            {
+                SaveImage(bwHandlers[i].Image, filePaths[i].Insert(filePaths[i].LastIndexOf('.'), "_bw"));
+
+            }        }
 
         private async void SaveAll_Click(object sender, RoutedEventArgs e)
         {
-            //save all BWs in one Folder
-            DirectoryInfo dir = Directory.CreateDirectory(filePath.Remove(filePath.LastIndexOf('.')));
-            string path = Path.Combine(dir.FullName, Path.GetFileName(filePath));
-            Task<Bitmap>[] tasks = BW_Handler.ConvertWithAllAlgorithms(bwHandler.Image);
-            SaveImage(await tasks[0], path.Insert(path.LastIndexOf('.'), "_average"));
-            SaveImage(await tasks[1], path.Insert(path.LastIndexOf('.'), "_luminosity"));
-            SaveImage(await tasks[2], path.Insert(path.LastIndexOf('.'), "_lightness"));
-            
+            for (int i = 0; i < filePaths.Length; i++)
+            {
+                //save all BWs in one Folder
+                DirectoryInfo dir = Directory.CreateDirectory(filePaths[i].Remove(filePaths[i].LastIndexOf('.')));
+                string path = Path.Combine(dir.FullName, Path.GetFileName(filePaths[i]));
+                Task<Bitmap>[] tasks = BW_Handler.ConvertWithAllAlgorithms(bwHandlers[i].Image);
+                SaveImage(await tasks[0], path.Insert(path.LastIndexOf('.'), "_average"));
+                SaveImage(await tasks[1], path.Insert(path.LastIndexOf('.'), "_luminosity"));
+                SaveImage(await tasks[2], path.Insert(path.LastIndexOf('.'), "_lightness")); 
+            }
+
+            MessageBox.Show("Alle gespeichert", "Erfolgreich", MessageBoxButton.OK);
+
         }
 
         private void SaveImage(Bitmap bitmap, string saveFilePath)
@@ -99,7 +123,6 @@ namespace Jpg
             {
                 MessageBox.Show(e.Message);
             }
-            MessageBox.Show("Datei gespeichert unter " + saveFilePath, "Datei gespeichert");
         }
 
 
